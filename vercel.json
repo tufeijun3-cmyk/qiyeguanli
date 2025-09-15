@@ -1,0 +1,20 @@
+# Vercel部署配置
+# 用于部署到Vercel平台
+
+[build]
+command = "npm run build"
+publish = "dist"
+
+[build.environment]
+NODE_VERSION = "18"
+
+# 环境变量
+[env]
+VITE_SUPABASE_URL = "https://bikdpdwqsfrflvplzrxy.supabase.co"
+VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpa2RwZHdxc2ZyZmx2cGx6cnh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc1MjY3MjYsImV4cCI6MjA3MzEwMjcyNn0.O7zgDEiDiHykHf7EcRUGDTDSZ2tKJdTJie07P0kwm2Y"
+
+# 重定向规则
+[[redirects]]
+from = "/*"
+to = "/index.html"
+status = 200
