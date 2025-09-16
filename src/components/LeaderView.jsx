@@ -68,6 +68,25 @@ export default function LeaderView({ user, onSuccess }) {
     additional_contacts: [],
     notes: ''
   })
+  
+  // 股票买入信息编辑状态
+  const [showStockEditModal, setShowStockEditModal] = useState(false)
+  const [editingStockCustomer, setEditingStockCustomer] = useState(null)
+  const [stockEditForm, setStockEditForm] = useState({
+    stock_code: '',
+    purchase_price: '',
+    purchase_time: '',
+    purchase_amount: '',
+    notes: ''
+  })
+  
+  // 备注信息编辑状态
+  const [showNotesEditModal, setShowNotesEditModal] = useState(false)
+  const [editingNotesCustomer, setEditingNotesCustomer] = useState(null)
+  const [notesEditForm, setNotesEditForm] = useState({
+    new_note: '',
+    timestamp: new Date().toLocaleString('zh-CN')
+  })
   const [profileForm, setProfileForm] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -508,6 +527,107 @@ export default function LeaderView({ user, onSuccess }) {
     } catch (error) {
       console.error('更新客户信息失败:', error)
       alert('更新失败，请重试')
+    }
+  }
+
+  // 开始编辑客户
+  const startEditCustomer = (customer) => {
+    setEditingCustomer(customer)
+    setEditCustomerForm({
+      name: customer.name || '',
+      contact: customer.contact || '',
+      age: customer.age || '',
+      occupation: customer.occupation || '',
+      investment_experience: customer.investment_experience || '',
+      budget_range: customer.budget_range || '',
+      strategy_interest: customer.strategy_interest || '',
+      risk_preference: customer.risk_preference || '',
+      source: customer.source || '',
+      additional_contacts: customer.additional_contacts || [],
+      notes: customer.notes || ''
+    })
+  }
+
+  // 打开股票编辑弹窗
+  const openStockEditModal = (customer) => {
+    setEditingStockCustomer(customer)
+    setStockEditForm({
+      stock_code: customer.purchased_stocks || '',
+      purchase_price: '',
+      purchase_time: '',
+      purchase_amount: '',
+      notes: ''
+    })
+    setShowStockEditModal(true)
+  }
+
+  // 保存股票买入信息
+  const handleSaveStockInfo = async (e) => {
+    e.preventDefault()
+    if (!editingStockCustomer) return
+
+    try {
+      const updates = {
+        purchased_stocks: stockEditForm.stock_code,
+        purchase_price: stockEditForm.purchase_price,
+        purchase_time: stockEditForm.purchase_time,
+        purchase_amount: stockEditForm.purchase_amount,
+        stock_notes: stockEditForm.notes
+      }
+
+      const result = await databaseService.updateCustomer(editingStockCustomer.id, updates)
+      if (result) {
+        alert('股票信息保存成功！')
+        setShowStockEditModal(false)
+        setEditingStockCustomer(null)
+        loadEmployeeData()
+      } else {
+        alert('保存失败，请重试')
+      }
+    } catch (error) {
+      console.error('保存股票信息失败:', error)
+      alert('保存失败，请重试')
+    }
+  }
+
+  // 打开备注编辑弹窗
+  const openNotesEditModal = (customer) => {
+    setEditingNotesCustomer(customer)
+    setNotesEditForm({
+      new_note: '',
+      timestamp: new Date().toLocaleString('zh-CN')
+    })
+    setShowNotesEditModal(true)
+  }
+
+  // 保存备注信息
+  const handleSaveNotesInfo = async (e) => {
+    e.preventDefault()
+    if (!editingNotesCustomer) return
+
+    try {
+      const timestamp = new Date().toLocaleString('zh-CN')
+      const newNote = `[${timestamp}] ${notesEditForm.new_note}`
+      
+      const existingNotes = editingNotesCustomer.notes || ''
+      const updatedNotes = existingNotes ? `${existingNotes}\n${newNote}` : newNote
+
+      const updates = {
+        notes: updatedNotes
+      }
+
+      const result = await databaseService.updateCustomer(editingNotesCustomer.id, updates)
+      if (result) {
+        alert('备注信息保存成功！')
+        setShowNotesEditModal(false)
+        setEditingNotesCustomer(null)
+        loadEmployeeData()
+      } else {
+        alert('保存失败，请重试')
+      }
+    } catch (error) {
+      console.error('保存备注信息失败:', error)
+      alert('保存失败，请重试')
     }
   }
 
@@ -2692,6 +2812,189 @@ export default function LeaderView({ user, onSuccess }) {
                   取消
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 股票编辑模态框 */}
+      {showStockEditModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-medium text-gray-900">
+                  📈 编辑股票买入信息 - {editingStockCustomer?.name}
+                </h3>
+                <button
+                  onClick={() => setShowStockEditModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <span className="sr-only">关闭</span>
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveStockInfo}>
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      股票代码 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={stockEditForm.stock_code}
+                      onChange={(e) => setStockEditForm({...stockEditForm, stock_code: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="如：000001"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      买入价格 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={stockEditForm.purchase_price}
+                      onChange={(e) => setStockEditForm({...stockEditForm, purchase_price: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="如：10.50"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      买入时间 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={stockEditForm.purchase_time}
+                      onChange={(e) => setStockEditForm({...stockEditForm, purchase_time: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      买入金额 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={stockEditForm.purchase_amount}
+                      onChange={(e) => setStockEditForm({...stockEditForm, purchase_amount: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="如：10000"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    备注信息
+                  </label>
+                  <textarea
+                    value={stockEditForm.notes}
+                    onChange={(e) => setStockEditForm({...stockEditForm, notes: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows="3"
+                    placeholder="请输入备注信息..."
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowStockEditModal(false)}
+                    className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors duration-200"
+                  >
+                    保存股票信息
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 备注编辑模态框 */}
+      {showNotesEditModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-medium text-gray-900">
+                  📝 添加备注信息 - {editingNotesCustomer?.name}
+                </h3>
+                <button
+                  onClick={() => setShowNotesEditModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <span className="sr-only">关闭</span>
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* 显示现有备注 */}
+              {editingNotesCustomer?.notes && (
+                <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">现有备注：</h4>
+                  <div className="text-sm text-gray-600 whitespace-pre-line">
+                    {editingNotesCustomer.notes}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveNotesInfo}>
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    新增备注 <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={notesEditForm.new_note}
+                    onChange={(e) => setNotesEditForm({...notesEditForm, new_note: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows="4"
+                    placeholder="请输入新的备注信息..."
+                    required
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    系统将自动添加时间戳：[{new Date().toLocaleString('zh-CN')}]
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowNotesEditModal(false)}
+                    className="bg-gray-600 text-white px-4 py-2 rounded text-sm hover:bg-gray-700 transition-colors duration-200"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition-colors duration-200"
+                  >
+                    添加备注
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
