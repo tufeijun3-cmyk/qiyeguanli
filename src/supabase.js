@@ -1028,6 +1028,18 @@ export class DatabaseService {
   // 物理删除客户（管理员专用）
   async permanentlyDeleteCustomer(customerId) {
     try {
+      // 先删除相关的跟进记录
+      const { error: followupError } = await supabase
+        .from('followups')
+        .delete()
+        .eq('customer_id', customerId)
+
+      if (followupError) {
+        console.error('删除跟进记录失败:', followupError)
+        throw followupError
+      }
+
+      // 然后删除客户记录
       const { data, error } = await supabase
         .from(TABLES.CUSTOMERS)
         .delete()
