@@ -103,6 +103,7 @@ export default function EmployeeDashboard({ user, onSuccess }) {
     confirmPassword: ''
   })
   const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [customerViewMode, setCustomerViewMode] = useState('cards') // 'cards' 或 'list'
 
   useEffect(() => {
     loadEmployeeData()
@@ -979,6 +980,30 @@ export default function EmployeeDashboard({ user, onSuccess }) {
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold text-gray-900">客户管理</h3>
         <div className="flex space-x-3">
+          {/* 视图切换按钮 */}
+          <div className="flex bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setCustomerViewMode('cards')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200 ${
+                customerViewMode === 'cards' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              📋 卡片视图
+            </button>
+            <button
+              onClick={() => setCustomerViewMode('list')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors duration-200 ${
+                customerViewMode === 'list' 
+                  ? 'bg-white text-gray-900 shadow-sm' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              📊 列表视图
+            </button>
+          </div>
+          
           <button
             onClick={() => openModal('customer')}
             className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors duration-200"
@@ -1020,8 +1045,127 @@ export default function EmployeeDashboard({ user, onSuccess }) {
               </button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {customers.map((customer) => {
+            customerViewMode === 'list' ? (
+              // 列表视图
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">客户信息</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">联系方式</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">来源</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">群状态</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">跟踪状态</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">投资信息</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {customers.map((customer) => {
+                      const customerFollowups = dashboardData.followups.filter(f => f.customer_id === customer.id)
+                      const lastFollowup = customerFollowups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+                      const pendingFollowups = customerFollowups.filter(f => 
+                        f.status === '进行中' && new Date(f.next_contact_date) <= new Date()
+                      )
+                      const completedFollowups = customerFollowups.filter(f => f.status === '已完成')
+                      const daysSinceLastFollowup = lastFollowup ? 
+                        Math.floor((new Date() - new Date(lastFollowup.created_at)) / (1000 * 60 * 60 * 24)) : 
+                        Math.floor((new Date() - new Date(customer.created_at)) / (1000 * 60 * 60 * 24))
+                      
+                      // 跟踪状态判断
+                      const getTrackingStatus = () => {
+                        if (pendingFollowups.length > 0) return { status: 'urgent', text: '🔴 紧急跟踪', color: 'bg-red-100 text-red-800' }
+                        if (daysSinceLastFollowup > 7) return { status: 'overdue', text: '🟡 超期跟踪', color: 'bg-yellow-100 text-yellow-800' }
+                        if (daysSinceLastFollowup > 3) return { status: 'due', text: '🟠 即将到期', color: 'bg-orange-100 text-orange-800' }
+                        return { status: 'normal', text: '🟢 正常跟踪', color: 'bg-green-100 text-green-800' }
+                      }
+                      
+                      const trackingStatus = getTrackingStatus()
+                      
+                      return (
+                        <tr key={customer.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">{customer.name}</div>
+                                <div className="text-sm text-gray-500">ID: {customer.id.slice(0, 8)}...</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{customer.contact}</div>
+                            {customer.additional_contacts && customer.additional_contacts.length > 0 && (
+                              <div className="text-xs text-gray-500">
+                                +{customer.additional_contacts.length} 个联系方式
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                              {customer.source}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {customer.joined_group ? (
+                              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-medium">
+                                ✅ 已进群
+                              </span>
+                            ) : (
+                              <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full font-medium">
+                                ❌ 未进群
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex flex-col space-y-1">
+                              <span className={`text-xs px-2 py-1 rounded-full font-medium ${trackingStatus.color}`}>
+                                {trackingStatus.text}
+                              </span>
+                              <div className="text-xs text-gray-500">
+                                跟踪: {customerFollowups.length}次 | 完成: {completedFollowups.length}次
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {customer.budget_range || '未设置'}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {customer.strategy_interest || '未设置'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => startEditCustomer(customer)}
+                                className="text-blue-600 hover:text-blue-900"
+                              >
+                                编辑
+                              </button>
+                              <button
+                                onClick={() => openStockEditModal(customer)}
+                                className="text-green-600 hover:text-green-900"
+                              >
+                                股票
+                              </button>
+                              <button
+                                onClick={() => openNotesEditModal(customer)}
+                                className="text-purple-600 hover:text-purple-900"
+                              >
+                                备注
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              // 卡片视图
+              <div className="space-y-4">
+                {customers.map((customer) => {
                 const customerFollowups = dashboardData.followups.filter(f => f.customer_id === customer.id)
                 const lastFollowup = customerFollowups.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
                 const pendingFollowups = customerFollowups.filter(f => 
@@ -1409,7 +1553,8 @@ export default function EmployeeDashboard({ user, onSuccess }) {
                   </div>
                 )
               })}
-            </div>
+              </div>
+            )
           )}
         </div>
       </div>
