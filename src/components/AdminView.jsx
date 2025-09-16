@@ -10,6 +10,10 @@ export default function AdminView({ user, onSuccess }) {
   const [showModal, setShowModal] = useState(false)
   const [modalType, setModalType] = useState('')
   const [editingUser, setEditingUser] = useState(null)
+  const [editingTeam, setEditingTeam] = useState(null)
+  
+  // 组织架构展开/折叠状态
+  const [expandedNodes, setExpandedNodes] = useState(new Set())
   
   // 申请类型管理状态
   const [expenseCategories, setExpenseCategories] = useState({})
@@ -40,7 +44,8 @@ export default function AdminView({ user, onSuccess }) {
     risk_preference: '',
     source: '',
     notes: '',
-    owner_id: ''
+    owner_id: '',
+    joined_group: false
   })
   
   // 批量操作状态
@@ -144,7 +149,15 @@ export default function AdminView({ user, onSuccess }) {
     role: 'employee',
     team_id: '',
     supervisor_id: '',
-    base_salary: ''
+    base_salary: '',
+    password: ''
+  })
+
+  // 团队表单状态
+  const [teamForm, setTeamForm] = useState({
+    name: '',
+    description: '',
+    leader_id: ''
   })
 
   useEffect(() => {
@@ -167,13 +180,40 @@ export default function AdminView({ user, onSuccess }) {
   const loadAdminData = async () => {
     setLoading(true)
     try {
-      const [dashboardData, usersData, teamsData, customersData, deletedCustomersData] = await Promise.all([
-        databaseService.getDashboardData('admin', user.id),
-        databaseService.getUsers(),
-        databaseService.getTeams(),
-        databaseService.getAllCustomers(),
-        databaseService.getDeletedCustomers()
-      ])
+      console.log('开始加载管理员数据...')
+      
+      // 分别加载数据，避免某个方法失败导致整个加载失败
+      const dashboardData = await databaseService.getDashboardData('admin', user.id).catch(err => {
+        console.warn('加载仪表板数据失败:', err)
+        return { expenses: [], customers: [], devices: [], users: [], stats: { totalExpenses: 0, pendingExpenses: 0, totalAmount: 0, totalCustomers: 0, totalDevices: 0 } }
+      })
+      
+      const usersData = await databaseService.getUsers().catch(err => {
+        console.warn('加载用户数据失败:', err)
+        return []
+      })
+      
+      const teamsData = await databaseService.getTeams().catch(err => {
+        console.warn('加载团队数据失败:', err)
+        return []
+      })
+      
+      const customersData = await databaseService.getAllCustomers().catch(err => {
+        console.warn('加载客户数据失败:', err)
+        return []
+      })
+      
+      const deletedCustomersData = await databaseService.getDeletedCustomers().catch(err => {
+        console.warn('加载已删除客户数据失败:', err)
+        return []
+      })
+      
+      console.log('管理员数据加载完成:', { 
+        dashboard: !!dashboardData, 
+        users: usersData.length, 
+        teams: teamsData.length, 
+        customers: customersData.length 
+      })
       
       setDashboardData(dashboardData)
       setUsers(usersData)
@@ -193,7 +233,23 @@ export default function AdminView({ user, onSuccess }) {
     setEditingUser(userData)
     setShowModal(true)
     
-    if (type === 'add' || type === 'edit') {
+    if (type === 'addTeam' || type === 'editTeam') {
+      if (userData) { // userData在这里实际上是teamData
+        setTeamForm({
+          name: userData.name || '',
+          description: userData.description || '',
+          leader_id: userData.leader_id || ''
+        })
+        setEditingTeam(userData)
+      } else {
+        setTeamForm({
+          name: '',
+          description: '',
+          leader_id: ''
+        })
+        setEditingTeam(null)
+      }
+    } else if (type === 'add' || type === 'edit') {
       if (userData) {
         setUserForm({
           name: userData.name || '',
@@ -202,7 +258,8 @@ export default function AdminView({ user, onSuccess }) {
           role: userData.role || 'employee',
           team_id: userData.team_id || '',
           supervisor_id: userData.supervisor_id || '',
-          base_salary: userData.base_salary || ''
+          base_salary: userData.base_salary || '',
+          password: userData.password || ''
         })
       } else {
         setUserForm({
@@ -212,7 +269,8 @@ export default function AdminView({ user, onSuccess }) {
           role: 'employee',
           team_id: '',
           supervisor_id: '',
-          base_salary: ''
+          base_salary: '',
+          password: ''
         })
       }
     } else if (type === 'addCategory') {
@@ -256,7 +314,8 @@ export default function AdminView({ user, onSuccess }) {
           risk_preference: userData.risk_preference || '',
           source: userData.source || '',
           notes: userData.notes || '',
-          owner_id: userData.owner_id || ''
+          owner_id: userData.owner_id || '',
+          joined_group: userData.joined_group || false
         })
         // 编辑客户时需要设置editingCustomer
         if (type === 'editCustomer') {
@@ -274,7 +333,8 @@ export default function AdminView({ user, onSuccess }) {
           risk_preference: '',
           source: '',
           notes: '',
-          owner_id: ''
+          owner_id: '',
+          joined_group: false
         })
       }
     }
@@ -405,6 +465,7 @@ export default function AdminView({ user, onSuccess }) {
     setModalType('')
     setEditingUser(null)
     setEditingCustomer(null)
+    setEditingTeam(null)
   }
 
   // 添加/编辑员工
@@ -419,7 +480,8 @@ export default function AdminView({ user, onSuccess }) {
         role: userForm.role,
         team_id: userForm.team_id || null,
         supervisor_id: userForm.supervisor_id || null,
-        base_salary: parseFloat(userForm.base_salary) || 0
+        base_salary: parseFloat(userForm.base_salary) || 0,
+        password: userForm.password
       }
 
       if (modalType === 'add') {
@@ -468,6 +530,62 @@ export default function AdminView({ user, onSuccess }) {
     }
   }
 
+  // 添加/编辑团队
+  const handleSubmitTeam = async (e) => {
+    e.preventDefault()
+    try {
+      const teamData = {
+        name: teamForm.name,
+        description: teamForm.description,
+        leader_id: teamForm.leader_id || null
+      }
+
+      if (modalType === 'addTeam') {
+        const result = await databaseService.addTeam(teamData)
+        if (result) {
+          alert('团队添加成功！')
+          closeModal()
+          loadAdminData()
+          onSuccess?.()
+        }
+      } else if (modalType === 'editTeam') {
+        if (!editingTeam || !editingTeam.id) {
+          alert('编辑团队信息失败：团队数据无效')
+          return
+        }
+        const result = await databaseService.updateTeam(editingTeam.id, teamData)
+        if (result) {
+          alert('团队信息更新成功！')
+          closeModal()
+          loadAdminData()
+          onSuccess?.()
+        } else {
+          alert('团队信息更新失败，请重试')
+        }
+      }
+    } catch (error) {
+      console.error('操作失败:', error)
+      alert(`操作失败: ${error.message || '请重试'}`)
+    }
+  }
+
+  // 删除团队
+  const handleDeleteTeam = async (teamId) => {
+    if (window.confirm('确定要删除这个团队吗？此操作不可撤销。')) {
+      try {
+        const result = await databaseService.deleteTeam(teamId)
+        if (result) {
+          alert('团队删除成功！')
+          loadAdminData()
+          onSuccess?.()
+        }
+      } catch (error) {
+        console.error('删除团队失败:', error)
+        alert('删除失败，请重试')
+      }
+    }
+  }
+
   // 添加/编辑客户
   const handleSubmitCustomer = async (e) => {
     e.preventDefault()
@@ -484,10 +602,10 @@ export default function AdminView({ user, onSuccess }) {
         source: customerForm.source || null,
         notes: customerForm.notes || null,
         owner_id: customerForm.owner_id,
+        joined_group: customerForm.joined_group,
         // 确保时间戳字段不为空字符串
         last_reply_time: null,
         last_group_read_time: null,
-        joined_group: false,
         purchased_stocks: null,
         additional_contacts: [],
         is_deleted: false
@@ -662,10 +780,10 @@ export default function AdminView({ user, onSuccess }) {
   // 下载客户模板
   const downloadCustomerTemplate = () => {
     const csvContent = [
-      '姓名,联系方式,年龄,职业,投资经验,资金规模,关注策略,风险偏好,客户来源,备注,归属员工邮箱',
-      '张三,13800138001,35,企业主,5年,100-500万,短线交易,激进型,朋友介绍,关注科技股策略,employee1@example.com',
-      '李四,13800138002,28,金融分析师,3年,50-100万,价值投资,稳健型,网站咨询,偏好蓝筹股策略,employee2@example.com',
-      '王五,13800138003,45,退休高管,10年,500万以上,量化交易,平衡型,电话咨询,对AI选股感兴趣,employee1@example.com'
+      '姓名,联系方式,年龄,职业,投资经验,资金规模,关注策略,风险偏好,客户来源,是否进群,备注,归属员工邮箱',
+      '张三,13800138001,35,企业主,5年,100-500万,短线交易,激进型,朋友介绍,已进群,关注科技股策略,employee1@example.com',
+      '李四,13800138002,28,金融分析师,3年,50-100万,价值投资,稳健型,网站咨询,未进群,偏好蓝筹股策略,employee2@example.com',
+      '王五,13800138003,45,退休高管,10年,500万以上,量化交易,平衡型,电话咨询,已进群,对AI选股感兴趣,employee1@example.com'
     ].join('\n')
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -697,6 +815,65 @@ export default function AdminView({ user, onSuccess }) {
   const getSupervisorName = (supervisorId) => {
     const supervisor = users.find(u => u.id === supervisorId)
     return supervisor ? supervisor.name : '无'
+  }
+
+  // 切换节点展开/折叠状态
+  const toggleNodeExpansion = (nodeId) => {
+    const newExpandedNodes = new Set(expandedNodes)
+    if (newExpandedNodes.has(nodeId)) {
+      newExpandedNodes.delete(nodeId)
+    } else {
+      newExpandedNodes.add(nodeId)
+    }
+    setExpandedNodes(newExpandedNodes)
+  }
+
+  // 展开所有节点
+  const expandAllNodes = (nodes) => {
+    const allNodeIds = new Set()
+    const collectNodeIds = (nodeList) => {
+      nodeList.forEach(node => {
+        allNodeIds.add(node.id)
+        if (node.subordinates && node.subordinates.length > 0) {
+          collectNodeIds(node.subordinates)
+        }
+      })
+    }
+    collectNodeIds(nodes)
+    setExpandedNodes(allNodeIds)
+  }
+
+  // 折叠所有节点
+  const collapseAllNodes = () => {
+    setExpandedNodes(new Set())
+  }
+
+  // 根据选择的团队获取可选的上级领导
+  const getAvailableSupervisors = (selectedTeamId) => {
+    // 获取所有可能的上级领导（组长、主管、管理员）
+    const allPossibleSupervisors = users.filter(u => ['team_leader', 'supervisor', 'admin'].includes(u.role))
+    
+    if (!selectedTeamId) {
+      // 如果没有选择团队，返回所有可能的上级领导
+      return allPossibleSupervisors
+    }
+    
+    // 如果选择了团队，返回该团队内的上级领导 + 系统管理员（作为最高级领导）
+    const teamSupervisors = users.filter(u => 
+      ['team_leader', 'supervisor', 'admin'].includes(u.role) && 
+      u.team_id === selectedTeamId
+    )
+    
+    // 添加系统管理员（admin角色）作为所有团队的上级选择
+    const systemAdmins = users.filter(u => u.role === 'admin')
+    
+    // 合并并去重
+    const allSupervisors = [...teamSupervisors, ...systemAdmins]
+    const uniqueSupervisors = allSupervisors.filter((supervisor, index, self) => 
+      index === self.findIndex(s => s.id === supervisor.id)
+    )
+    
+    return uniqueSupervisors
   }
 
   if (loading) {
@@ -837,7 +1014,26 @@ export default function AdminView({ user, onSuccess }) {
         
         {/* 部门组织架构图 */}
         <div className="space-y-3">
-          {orgTree.length > 0 ? renderOrgChart(orgTree) : (
+          {orgTree.length > 0 ? (
+            <>
+              {/* 展开/折叠控制按钮 */}
+              <div className="flex justify-end space-x-2 mb-3">
+                <button
+                  onClick={() => expandAllNodes(orgTree)}
+                  className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors duration-200"
+                >
+                  展开全部
+                </button>
+                <button
+                  onClick={collapseAllNodes}
+                  className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors duration-200"
+                >
+                  折叠全部
+                </button>
+              </div>
+              {renderOrgChart(orgTree)}
+            </>
+          ) : (
             <div className="text-center py-4 text-gray-500">
               <div className="text-2xl mb-2">👥</div>
               <p>暂无组织架构</p>
@@ -850,66 +1046,82 @@ export default function AdminView({ user, onSuccess }) {
 
   // 渲染组织架构图（树形结构）
   const renderOrgChart = (nodes, level = 0) => {
-    return nodes.map(node => (
-      <div key={node.id} className="relative">
-        {/* 连接线 */}
-        {level > 0 && (
-          <div className="absolute left-0 top-0 w-6 h-6 border-l-2 border-b-2 border-gray-300 rounded-bl-lg"></div>
-        )}
-        
-        <div className={`flex items-center p-3 rounded-lg border ml-6 ${
-          level === 0 ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200' :
-          level === 1 ? 'bg-gray-50 border-gray-200' :
-          'bg-white border-gray-100'
-        }`}>
-          <div className="flex items-center space-x-3 flex-1">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium shadow-md ${
-              node.role === 'admin' ? 'bg-red-500' :
-              node.role === 'supervisor' ? 'bg-purple-500' :
-              node.role === 'team_leader' ? 'bg-blue-500' :
-              node.role === 'finance' ? 'bg-green-500' :
-              'bg-gray-500'
-            }`}>
-              {node.name.charAt(0)}
+    return nodes.map(node => {
+      const isExpanded = expandedNodes.has(node.id)
+      const hasSubordinates = node.subordinates && node.subordinates.length > 0
+      
+      return (
+        <div key={node.id} className="relative">
+          {/* 连接线 */}
+          {level > 0 && (
+            <div className="absolute left-0 top-0 w-6 h-6 border-l-2 border-b-2 border-gray-300 rounded-bl-lg"></div>
+          )}
+          
+          <div className={`flex items-center p-3 rounded-lg border ml-6 ${
+            level === 0 ? 'bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200' :
+            level === 1 ? 'bg-gray-50 border-gray-200' :
+            'bg-white border-gray-100'
+          }`}>
+            <div className="flex items-center space-x-3 flex-1">
+              {/* 展开/折叠按钮 */}
+              {hasSubordinates && (
+                <button
+                  onClick={() => toggleNodeExpansion(node.id)}
+                  className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                >
+                  {isExpanded ? '▼' : '▶'}
+                </button>
+              )}
+              {!hasSubordinates && <div className="w-6"></div>}
+              
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium shadow-md ${
+                node.role === 'admin' ? 'bg-red-500' :
+                node.role === 'supervisor' ? 'bg-purple-500' :
+                node.role === 'team_leader' ? 'bg-blue-500' :
+                node.role === 'finance' ? 'bg-green-500' :
+                'bg-gray-500'
+              }`}>
+                {node.name.charAt(0)}
+              </div>
+              <div>
+                <div className="font-medium text-gray-900">{node.name}</div>
+                <div className="text-sm text-gray-500">
+                  {getRoleName(node.role)} · ¥{node.base_salary || 0}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="font-medium text-gray-900">{node.name}</div>
-              <div className="text-sm text-gray-500">
-                {getRoleName(node.role)} · ¥{node.base_salary || 0}
+            <div className="flex items-center space-x-2">
+              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                hasSubordinates ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {node.subordinates.length} 下级
+              </span>
+              <div className="flex space-x-1">
+                <button
+                  onClick={() => openModal('edit', node)}
+                  className="text-blue-600 hover:text-blue-900 text-sm px-2 py-1 rounded hover:bg-blue-50"
+                >
+                  编辑
+                </button>
+                <button
+                  onClick={() => handleDeleteUser(node.id)}
+                  className="text-red-600 hover:text-red-900 text-sm px-2 py-1 rounded hover:bg-red-50"
+                >
+                  删除
+                </button>
               </div>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-              node.subordinates.length > 0 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-            }`}>
-              {node.subordinates.length} 下级
-            </span>
-            <div className="flex space-x-1">
-              <button
-                onClick={() => openModal('edit', node)}
-                className="text-blue-600 hover:text-blue-900 text-sm px-2 py-1 rounded hover:bg-blue-50"
-              >
-                编辑
-              </button>
-              <button
-                onClick={() => handleDeleteUser(node.id)}
-                className="text-red-600 hover:text-red-900 text-sm px-2 py-1 rounded hover:bg-red-50"
-              >
-                删除
-              </button>
+          
+          {/* 下级 - 只在展开时显示 */}
+          {hasSubordinates && isExpanded && (
+            <div className="mt-2 ml-6">
+              {renderOrgChart(node.subordinates, level + 1)}
             </div>
-          </div>
+          )}
         </div>
-        
-        {/* 下级 */}
-        {node.subordinates.length > 0 && (
-          <div className="mt-2 ml-6">
-            {renderOrgChart(node.subordinates, level + 1)}
-          </div>
-        )}
-      </div>
-    ))
+      )
+    })
   }
 
   const renderEmployeeManagement = () => {
@@ -1101,6 +1313,8 @@ export default function AdminView({ user, onSuccess }) {
               <h3 className="text-lg font-semibold text-gray-900">
                 {modalType === 'add' && '添加员工'}
                 {modalType === 'edit' && '编辑员工'}
+                {modalType === 'addTeam' && '添加团队'}
+                {modalType === 'editTeam' && '编辑团队'}
                 {modalType === 'addCategory' && '添加大类型'}
                 {modalType === 'editCategory' && '编辑大类型'}
                 {modalType === 'addType' && '添加小类型'}
@@ -1156,6 +1370,20 @@ export default function AdminView({ user, onSuccess }) {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">登录密码 *</label>
+                  <input
+                    type="password"
+                    value={userForm.password}
+                    onChange={(e) => setUserForm({...userForm, password: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="请设置登录密码"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">基本薪资</label>
                   <input
                     type="number"
@@ -1165,6 +1393,7 @@ export default function AdminView({ user, onSuccess }) {
                     placeholder="请输入基本薪资"
                   />
                 </div>
+                <div></div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1187,7 +1416,17 @@ export default function AdminView({ user, onSuccess }) {
                   <label className="block text-sm font-medium text-gray-700 mb-2">所属团队</label>
                   <select
                     value={userForm.team_id}
-                    onChange={(e) => setUserForm({...userForm, team_id: e.target.value})}
+                    onChange={(e) => {
+                      const newTeamId = e.target.value
+                      const availableSupervisors = getAvailableSupervisors(newTeamId)
+                      const currentSupervisorValid = availableSupervisors.some(s => s.id === userForm.supervisor_id)
+                      
+                      setUserForm({
+                        ...userForm, 
+                        team_id: newTeamId,
+                        supervisor_id: currentSupervisorValid ? userForm.supervisor_id : ''
+                      })
+                    }}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">请选择团队</option>
@@ -1208,12 +1447,17 @@ export default function AdminView({ user, onSuccess }) {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">请选择上级</option>
-                  {users.filter(u => ['team_leader', 'supervisor', 'admin'].includes(u.role)).map(supervisor => (
+                  {getAvailableSupervisors(userForm.team_id).map(supervisor => (
                     <option key={supervisor.id} value={supervisor.id}>
                       {supervisor.name} ({getRoleName(supervisor.role)})
                     </option>
                   ))}
                 </select>
+                {userForm.team_id && getAvailableSupervisors(userForm.team_id).length === 1 && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    该团队暂无内部上级领导，可选择系统管理员作为上级
+                  </p>
+                )}
               </div>
 
               <div className="flex space-x-3 pt-4">
@@ -1232,6 +1476,66 @@ export default function AdminView({ user, onSuccess }) {
                 </button>
               </div>
             </form>
+            )}
+
+            {/* 团队管理表单 */}
+            {(modalType === 'addTeam' || modalType === 'editTeam') && (
+              <form onSubmit={handleSubmitTeam} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">团队名称 *</label>
+                  <input
+                    type="text"
+                    value={teamForm.name}
+                    onChange={(e) => setTeamForm({...teamForm, name: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="请输入团队名称"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">团队描述</label>
+                  <textarea
+                    value={teamForm.description}
+                    onChange={(e) => setTeamForm({...teamForm, description: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="请输入团队描述"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">团队负责人</label>
+                  <select
+                    value={teamForm.leader_id}
+                    onChange={(e) => setTeamForm({...teamForm, leader_id: e.target.value})}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">请选择团队负责人</option>
+                    {users.filter(u => ['team_leader', 'supervisor', 'admin'].includes(u.role)).map(leader => (
+                      <option key={leader.id} value={leader.id}>
+                        {leader.name} ({getRoleName(leader.role)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors duration-200"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                  >
+                    {modalType === 'addTeam' ? '添加团队' : '保存修改'}
+                  </button>
+                </div>
+              </form>
             )}
 
             {/* 大类型管理表单 */}
@@ -1498,6 +1802,20 @@ export default function AdminView({ user, onSuccess }) {
                     </select>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">是否进群</label>
+                    <select
+                      value={customerForm.joined_group ? 'true' : 'false'}
+                      onChange={(e) => setCustomerForm({...customerForm, joined_group: e.target.value === 'true'})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="false">未进群</option>
+                      <option value="true">已进群</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">归属员工 *</label>
                     <select
                       value={customerForm.owner_id}
@@ -1743,6 +2061,118 @@ export default function AdminView({ user, onSuccess }) {
     )
   }
 
+  // 团队管理界面
+  const renderTeamManagement = () => {
+    return (
+      <div className="space-y-6">
+        {/* 页面标题和操作按钮 */}
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">团队管理</h3>
+            <p className="text-sm text-gray-600">管理系统中的团队信息，包括创建、编辑、删除等操作</p>
+          </div>
+          <button
+            onClick={() => openModal('addTeam')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200 flex items-center space-x-2"
+          >
+            <span>➕</span>
+            <span>添加团队</span>
+          </button>
+        </div>
+
+        {/* 团队列表 */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">团队名称</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">团队描述</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">团队负责人</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">成员数量</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {teams.map((team) => {
+                  const memberCount = users.filter(u => u.team_id === team.id).length
+                  return (
+                    <tr key={team.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center text-white font-bold">
+                            {team.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{team.name}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {team.description || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {team.leader ? (
+                          <div className="flex items-center space-x-2">
+                            <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                              {team.leader.name.charAt(0)}
+                            </div>
+                            <span className="text-sm text-gray-900">{team.leader.name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">未指定</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                          {memberCount} 人
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(team.created_at).toLocaleDateString('zh-CN')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => openModal('editTeam', team)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            编辑
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTeam(team.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {teams.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-gray-400 text-6xl mb-4">🏢</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">暂无团队数据</h3>
+            <p className="text-gray-500 mb-4">系统中还没有团队记录</p>
+            <button
+              onClick={() => openModal('addTeam')}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
+            >
+              添加第一个团队
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // 客户管理界面
   const renderCustomerManagement = () => {
     return (
@@ -1851,6 +2281,9 @@ export default function AdminView({ user, onSuccess }) {
                     来源
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    是否进群
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     创建时间
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1909,6 +2342,15 @@ export default function AdminView({ user, onSuccess }) {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                         {customer.source || '未知'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        customer.joined_group 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {customer.joined_group ? '已进群' : '未进群'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1990,6 +2432,7 @@ export default function AdminView({ user, onSuccess }) {
             {[
               { id: 'overview', name: '系统概览', icon: '📊' },
               { id: 'employees', name: '员工管理', icon: '👥' },
+              { id: 'teams', name: '团队管理', icon: '🏢' },
               { id: 'expenseTypes', name: '申请类型管理', icon: '📋' },
               { id: 'customers', name: '客户管理', icon: '👤' }
             ].map((tab) => (
@@ -2012,6 +2455,7 @@ export default function AdminView({ user, onSuccess }) {
         <div className="p-6">
           {activeTab === 'overview' && renderOverview()}
           {activeTab === 'employees' && renderEmployeeManagement()}
+          {activeTab === 'teams' && renderTeamManagement()}
           {activeTab === 'expenseTypes' && renderExpenseTypeManagement()}
           {activeTab === 'customers' && renderCustomerManagement()}
         </div>

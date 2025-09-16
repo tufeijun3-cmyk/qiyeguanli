@@ -2027,21 +2027,34 @@ export default function EmployeeDashboard({ user, onSuccess }) {
                   </div>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">客户来源</label>
-                  <select
-                    value={customerForm.source}
-                    onChange={(e) => setCustomerForm({...customerForm, source: e.target.value})}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  >
-                    <option value="">请选择客户来源</option>
-                    <option value="朋友介绍">朋友介绍</option>
-                    <option value="网站咨询">网站咨询</option>
-                    <option value="电话咨询">电话咨询</option>
-                    <option value="广告推广">广告推广</option>
-                    <option value="展会">展会</option>
-                    <option value="其他">其他</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">客户来源</label>
+                    <select
+                      value={customerForm.source}
+                      onChange={(e) => setCustomerForm({...customerForm, source: e.target.value})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="">请选择客户来源</option>
+                      <option value="朋友介绍">朋友介绍</option>
+                      <option value="网站咨询">网站咨询</option>
+                      <option value="电话咨询">电话咨询</option>
+                      <option value="广告推广">广告推广</option>
+                      <option value="展会">展会</option>
+                      <option value="其他">其他</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">是否进群</label>
+                    <select
+                      value={customerForm.joined_group ? 'true' : 'false'}
+                      onChange={(e) => setCustomerForm({...customerForm, joined_group: e.target.value === 'true'})}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="false">未进群</option>
+                      <option value="true">已进群</option>
+                    </select>
+                  </div>
                 </div>
                 
                 <div>

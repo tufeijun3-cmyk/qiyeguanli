@@ -25,6 +25,97 @@ export const TABLES = {
   EXPENSE_CATEGORIES: 'expense_categories'
 }
 
+// 认证服务类
+export class AuthService {
+  constructor() {
+    this.currentUser = null
+  }
+
+  // 用户登录
+  async login(email, password) {
+    try {
+      // 首先从用户表中查找用户
+      const { data: userData, error: userError } = await supabase
+        .from(TABLES.USERS)
+        .select('*')
+        .eq('email', email)
+        .single()
+
+      if (userError || !userData) {
+        throw new Error('用户不存在')
+      }
+
+      // 简单的密码验证（实际项目中应该使用加密）
+      if (userData.password !== password) {
+        throw new Error('密码错误')
+      }
+
+      // 登录成功，保存用户信息
+      this.currentUser = userData
+      
+      // 保存到localStorage
+      localStorage.setItem('currentUser', JSON.stringify(userData))
+      
+      return userData
+    } catch (error) {
+      console.error('登录失败:', error)
+      throw error
+    }
+  }
+
+  // 用户登出
+  logout() {
+    this.currentUser = null
+    localStorage.removeItem('currentUser')
+  }
+
+  // 获取当前用户
+  getCurrentUser() {
+    if (this.currentUser) {
+      return this.currentUser
+    }
+
+    // 从localStorage恢复用户信息
+    const savedUser = localStorage.getItem('currentUser')
+    if (savedUser) {
+      try {
+        this.currentUser = JSON.parse(savedUser)
+        return this.currentUser
+      } catch (error) {
+        console.error('恢复用户信息失败:', error)
+        localStorage.removeItem('currentUser')
+      }
+    }
+
+    return null
+  }
+
+  // 检查是否已登录
+  isAuthenticated() {
+    return this.getCurrentUser() !== null
+  }
+
+  // 检查用户权限
+  hasPermission(requiredRole) {
+    const user = this.getCurrentUser()
+    if (!user) return false
+
+    // 角色权限层级
+    const roleHierarchy = {
+      'employee': 1,
+      'team_leader': 2,
+      'supervisor': 3,
+      'finance': 4,
+      'admin': 5
+    }
+
+    const userLevel = roleHierarchy[user.role] || 0
+    const requiredLevel = roleHierarchy[requiredRole] || 0
+
+    return userLevel >= requiredLevel
+  }
+}
+
 // 数据库操作类
 export class DatabaseService {
   constructor() {
@@ -47,12 +138,18 @@ export class DatabaseService {
   // ==================== 用户管理 ====================
   async getUsers() {
     try {
+      console.log('开始查询用户数据...')
       const { data, error } = await supabase
         .from(TABLES.USERS)
         .select('*')
         .order('created_at', { ascending: false })
       
-      if (error) throw error
+      if (error) {
+        console.error('Supabase 用户查询错误:', error)
+        throw error
+      }
+      
+      console.log('用户数据查询完成:', data?.length || 0)
       return data || []
     } catch (error) {
       console.error('获取用户列表失败:', error)
@@ -147,9 +244,109 @@ export class DatabaseService {
     }
   }
 
+  async addTeam(teamData) {
+    try {
+      console.log('添加团队数据:', teamData)
+      
+      // 构建插入数据，只包含必要的字段
+      const insertData = {
+        name: teamData.name
+      }
+      
+      // 如果有 description 字段，添加它
+      if (teamData.description && teamData.description.trim() !== '') {
+        insertData.description = teamData.description
+      }
+      
+      // 如果有 leader_id 且不为空，则添加
+      if (teamData.leader_id && teamData.leader_id !== '') {
+        insertData.leader_id = teamData.leader_id
+      }
+      
+      console.log('插入数据:', insertData)
+      
+      const { data, error } = await supabase
+        .from(TABLES.TEAMS)
+        .insert([insertData])
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Supabase 错误:', error)
+        throw new Error(`数据库错误: ${error.message}`)
+      }
+      
+      console.log('团队添加成功:', data)
+      return data
+    } catch (error) {
+      console.error('添加团队失败:', error)
+      throw new Error(`添加团队失败: ${error.message}`)
+    }
+  }
+
+  async updateTeam(teamId, teamData) {
+    try {
+      console.log('更新团队数据:', teamData)
+      
+      // 构建更新数据
+      const updateData = {
+        name: teamData.name
+      }
+      
+      // 如果有 description 字段，添加它
+      if (teamData.description !== undefined) {
+        updateData.description = teamData.description || ''
+      }
+      
+      // 如果有 leader_id，添加它
+      if (teamData.leader_id !== undefined) {
+        updateData.leader_id = teamData.leader_id || null
+      }
+      
+      console.log('更新数据:', updateData)
+      
+      const { data, error } = await supabase
+        .from(TABLES.TEAMS)
+        .update(updateData)
+        .eq('id', teamId)
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Supabase 错误:', error)
+        throw new Error(`数据库错误: ${error.message}`)
+      }
+      
+      console.log('团队更新成功:', data)
+      return data
+    } catch (error) {
+      console.error('更新团队失败:', error)
+      throw new Error(`更新团队失败: ${error.message}`)
+    }
+  }
+
+  async deleteTeam(teamId) {
+    try {
+      const { data, error } = await supabase
+        .from(TABLES.TEAMS)
+        .delete()
+        .eq('id', teamId)
+        .select()
+        .single()
+      
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('删除团队失败:', error)
+      throw error
+    }
+  }
+
   // ==================== 支出申请管理 ====================
   async getExpenses(filters = {}) {
     try {
+      console.log('开始查询申请数据...', filters)
+      
       let query = supabase
         .from(TABLES.EXPENSES)
         .select(`
@@ -175,7 +372,12 @@ export class DatabaseService {
 
       const { data, error } = await query
       
-      if (error) throw error
+      if (error) {
+        console.error('Supabase 查询错误:', error)
+        throw error
+      }
+      
+      console.log('申请数据查询完成:', data?.length || 0)
       return data || []
     } catch (error) {
       console.error('获取支出申请失败:', error)
@@ -1062,23 +1264,43 @@ export class DatabaseService {
 
   async getDashboardData(role, userId) {
     try {
-      const [customers, devices, users] = await Promise.all([
-        this.getCustomers(),
-        this.getDevices(),
-        this.getUsers()
-      ])
+      console.log('开始加载仪表板数据...')
+      
+      // 分别加载数据，避免某个表不存在导致整个加载失败
+      const customers = await this.getCustomers().catch(err => {
+        console.warn('加载客户数据失败:', err)
+        return []
+      })
+      
+      const devices = await this.getDevices().catch(err => {
+        console.warn('加载设备数据失败:', err)
+        return []
+      })
+      
+      const users = await this.getUsers().catch(err => {
+        console.warn('加载用户数据失败:', err)
+        return []
+      })
+      
+      console.log('基础数据加载完成:', { customers: customers.length, devices: devices.length, users: users.length })
 
       // 根据角色获取申请数据
       let expenses = []
-      if (role === 'team_leader' || role === 'supervisor') {
-        // 组长和主管使用权限控制方法
-        expenses = await this.getSubordinateExpenses(userId, role)
-      } else if (role === 'employee') {
-        // 员工只能看到自己的申请
-        expenses = await this.getExpenses({ user_id: userId })
-      } else {
-        // 管理员和财务可以看到所有申请
-        expenses = await this.getExpenses()
+      try {
+        if (role === 'team_leader' || role === 'supervisor') {
+          // 组长和主管使用权限控制方法
+          expenses = await this.getSubordinateExpenses(userId, role)
+        } else if (role === 'employee') {
+          // 员工只能看到自己的申请
+          expenses = await this.getExpenses({ user_id: userId })
+        } else {
+          // 管理员和财务可以看到所有申请
+          expenses = await this.getExpenses()
+        }
+        console.log('申请数据加载完成:', expenses.length)
+      } catch (err) {
+        console.warn('加载申请数据失败:', err)
+        expenses = []
       }
 
       return {
@@ -1214,3 +1436,4 @@ export class DatabaseService {
 
 // 创建单例实例
 export const databaseService = new DatabaseService()
+export const authService = new AuthService()

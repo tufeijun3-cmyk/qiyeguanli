@@ -19,8 +19,14 @@ export default function FinanceView({ user, onSuccess }) {
     byPerson: {},
     byTeam: {},
     byDepartment: {},
+    byMonth: {},
     totalAmount: 0,
-    totalCount: 0
+    totalCount: 0,
+    averageAmount: 0,
+    maxAmount: 0,
+    minAmount: 0,
+    highRiskExpenses: [],
+    monthlyTrends: []
   })
 
   useEffect(() => {
@@ -30,16 +36,32 @@ export default function FinanceView({ user, onSuccess }) {
   const loadExpenses = async () => {
     setLoading(true)
     try {
-      // 加载待财务审批的申请
-      const pendingData = await databaseService.getExpenses({ status: 'waiting_finance' })
+      console.log('开始加载财务数据...')
+      
+      // 并行加载数据，提高效率
+      const [pendingData, paidData, allData] = await Promise.all([
+        databaseService.getExpenses({ status: 'waiting_finance' }).catch(err => {
+          console.warn('加载待审批申请失败:', err)
+          return []
+        }),
+        databaseService.getExpenses({ status: 'paid' }).catch(err => {
+          console.warn('加载已支付申请失败:', err)
+          return []
+        }),
+        databaseService.getExpenses().catch(err => {
+          console.warn('加载所有申请失败:', err)
+          return []
+        })
+      ])
+      
+      console.log('财务数据加载完成:', { 
+        pending: pendingData.length, 
+        paid: paidData.length, 
+        all: allData.length 
+      })
+      
       setExpenses(pendingData)
-      
-      // 加载已支付的申请
-      const paidData = await databaseService.getExpenses({ status: 'paid' })
       setPaidExpenses(paidData)
-      
-      // 加载所有支出数据（用于统计分析）
-      const allData = await databaseService.getExpenses()
       setAllExpenses(allData)
       
       // 计算统计信息
@@ -52,17 +74,35 @@ export default function FinanceView({ user, onSuccess }) {
   }
 
   const calculateExpenseStats = (expenses) => {
+    console.log('开始计算统计信息...', expenses.length)
+    
     const stats = {
       byPurpose: {},
       byPerson: {},
       byTeam: {},
       byDepartment: {},
+      byMonth: {},
       totalAmount: 0,
-      totalCount: expenses.length
+      totalCount: expenses.length,
+      averageAmount: 0,
+      maxAmount: 0,
+      minAmount: 0,
+      highRiskExpenses: [],
+      monthlyTrends: []
     }
 
-    expenses.forEach(expense => {
+    if (expenses.length === 0) {
+      setExpenseStats(stats)
+      return
+    }
+
+    const amounts = []
+    const monthlyData = {}
+
+    // 使用更高效的循环和计算
+    for (const expense of expenses) {
       const amount = expense.amount || 0
+      amounts.push(amount)
       stats.totalAmount += amount
 
       // 按用途统计
@@ -80,6 +120,62 @@ export default function FinanceView({ user, onSuccess }) {
       // 按部门统计（这里假设团队名就是部门名）
       const department = expense.team?.name || '未知部门'
       stats.byDepartment[department] = (stats.byDepartment[department] || 0) + amount
+
+      // 按月统计
+      const date = new Date(expense.applied_at)
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const monthName = `${date.getFullYear()}年${date.getMonth() + 1}月`
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: monthName,
+          amount: 0,
+          count: 0,
+          expenses: []
+        }
+      }
+      monthlyData[monthKey].amount += amount
+      monthlyData[monthKey].count += 1
+      monthlyData[monthKey].expenses.push(expense)
+
+      // 识别高风险开支（大额开支或特殊用途）
+      if (amount > 10000 || 
+          purpose.includes('设备') || 
+          purpose.includes('电脑') || 
+          purpose.includes('手机') ||
+          purpose.includes('家具') ||
+          purpose.includes('装修')) {
+        stats.highRiskExpenses.push({
+          ...expense,
+          riskLevel: amount > 50000 ? 'high' : amount > 20000 ? 'medium' : 'low',
+          riskReason: amount > 50000 ? '超大额开支' : 
+                     amount > 20000 ? '大额开支' : 
+                     '特殊用途开支'
+        })
+      }
+    }
+
+    // 计算统计指标
+    if (amounts.length > 0) {
+      stats.averageAmount = stats.totalAmount / amounts.length
+      stats.maxAmount = Math.max(...amounts)
+      stats.minAmount = Math.min(...amounts)
+    }
+
+    // 按月统计
+    stats.byMonth = monthlyData
+    stats.monthlyTrends = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month))
+
+    // 按风险等级排序高风险开支
+    stats.highRiskExpenses.sort((a, b) => {
+      const riskOrder = { 'high': 3, 'medium': 2, 'low': 1 }
+      return riskOrder[b.riskLevel] - riskOrder[a.riskLevel]
+    })
+
+    console.log('统计信息计算完成:', { 
+      totalAmount: stats.totalAmount, 
+      totalCount: stats.totalCount,
+      highRiskCount: stats.highRiskExpenses.length 
     })
 
     setExpenseStats(stats)
@@ -176,7 +272,11 @@ export default function FinanceView({ user, onSuccess }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-gray-600">加载中...</div>
+        <div className="text-center">
+          <div className="loading-spinner mx-auto mb-4"></div>
+          <div className="text-lg text-gray-600">正在加载财务数据...</div>
+          <div className="text-sm text-gray-500 mt-2">请稍候，正在分析开支数据</div>
+        </div>
       </div>
     )
   }
@@ -219,6 +319,16 @@ export default function FinanceView({ user, onSuccess }) {
                 }`}
               >
                 开支明细 ({allExpenses.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('risks')}
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  activeTab === 'risks'
+                    ? 'bg-red-100 text-red-700 border border-red-200'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                风险预警 ({expenseStats.highRiskExpenses.length})
               </button>
             </div>
           </div>
@@ -466,7 +576,7 @@ export default function FinanceView({ user, onSuccess }) {
             // 开支明细
             <div className="space-y-6">
               {/* 统计概览 */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="text-sm font-medium text-blue-600">总支出金额</div>
                   <div className="text-2xl font-bold text-blue-900">¥{expenseStats.totalAmount.toLocaleString()}</div>
@@ -477,16 +587,24 @@ export default function FinanceView({ user, onSuccess }) {
                 </div>
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                   <div className="text-sm font-medium text-purple-600">平均金额</div>
-                  <div className="text-2xl font-bold text-purple-900">¥{expenseStats.totalCount > 0 ? (expenseStats.totalAmount / expenseStats.totalCount).toFixed(0) : 0}</div>
+                  <div className="text-2xl font-bold text-purple-900">¥{expenseStats.averageAmount.toFixed(0)}</div>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="text-sm font-medium text-red-600">最大金额</div>
+                  <div className="text-2xl font-bold text-red-900">¥{expenseStats.maxAmount.toLocaleString()}</div>
                 </div>
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <div className="text-sm font-medium text-orange-600">部门数量</div>
-                  <div className="text-2xl font-bold text-orange-900">{Object.keys(expenseStats.byDepartment).length}</div>
+                  <div className="text-sm font-medium text-orange-600">团队数量</div>
+                  <div className="text-2xl font-bold text-orange-900">{Object.keys(expenseStats.byTeam).length}</div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="text-sm font-medium text-yellow-600">风险开支</div>
+                  <div className="text-2xl font-bold text-yellow-900">{expenseStats.highRiskExpenses.length}</div>
                 </div>
               </div>
 
               {/* 分类统计 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 {/* 按用途统计 */}
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
                   <h4 className="text-lg font-medium text-gray-900 mb-4">按用途统计</h4>
@@ -502,16 +620,34 @@ export default function FinanceView({ user, onSuccess }) {
                   </div>
                 </div>
 
-                {/* 按部门统计 */}
+                {/* 按团队统计 */}
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
-                  <h4 className="text-lg font-medium text-gray-900 mb-4">按部门统计</h4>
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">按团队统计</h4>
                   <div className="space-y-2">
-                    {Object.entries(expenseStats.byDepartment)
+                    {Object.entries(expenseStats.byTeam)
                       .sort(([,a], [,b]) => b - a)
-                      .map(([department, amount]) => (
-                        <div key={department} className="flex justify-between items-center">
-                          <span className="text-sm text-gray-600">{department}</span>
+                      .map(([team, amount]) => (
+                        <div key={team} className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">{team}</span>
                           <span className="text-sm font-medium text-gray-900">¥{amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* 按月统计 */}
+                <div className="bg-white border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">按月统计</h4>
+                  <div className="space-y-2">
+                    {expenseStats.monthlyTrends
+                      .slice(-6) // 显示最近6个月
+                      .map((monthData) => (
+                        <div key={monthData.month} className="flex justify-between items-center">
+                          <span className="text-sm text-gray-600">{monthData.month}</span>
+                          <div className="text-right">
+                            <div className="text-sm font-medium text-gray-900">¥{monthData.amount.toLocaleString()}</div>
+                            <div className="text-xs text-gray-500">{monthData.count}笔</div>
+                          </div>
                         </div>
                       ))}
                   </div>
@@ -562,7 +698,21 @@ export default function FinanceView({ user, onSuccess }) {
                             <div className="text-sm text-gray-900">{expense.purpose || '未填写'}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">¥{expense.amount?.toLocaleString() || 0}</div>
+                            <div className="flex items-center space-x-2">
+                              <div className={`text-sm font-medium ${
+                                expense.amount > 50000 ? 'text-red-600 font-bold' :
+                                expense.amount > 20000 ? 'text-orange-600 font-semibold' :
+                                expense.amount > 10000 ? 'text-yellow-600' :
+                                'text-gray-900'
+                              }`}>
+                                ¥{expense.amount?.toLocaleString() || 0}
+                              </div>
+                              {expense.amount > 20000 && (
+                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
+                                  {expense.amount > 50000 ? '超大额' : '大额'}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -580,6 +730,125 @@ export default function FinanceView({ user, onSuccess }) {
                                expense.status === 'submitted' ? '待组长审批' :
                                expense.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {new Date(expense.applied_at).toLocaleDateString()}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button
+                              onClick={() => {
+                                setSelectedExpense(expense)
+                                setShowModal(true)
+                              }}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
+                              查看详情
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {activeTab === 'risks' && (
+            // 风险预警
+            <div className="space-y-6">
+              {/* 风险概览 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="text-sm font-medium text-red-600">高风险开支</div>
+                  <div className="text-2xl font-bold text-red-900">
+                    {expenseStats.highRiskExpenses.filter(e => e.riskLevel === 'high').length}
+                  </div>
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="text-sm font-medium text-orange-600">中风险开支</div>
+                  <div className="text-2xl font-bold text-orange-900">
+                    {expenseStats.highRiskExpenses.filter(e => e.riskLevel === 'medium').length}
+                  </div>
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="text-sm font-medium text-yellow-600">低风险开支</div>
+                  <div className="text-2xl font-bold text-yellow-900">
+                    {expenseStats.highRiskExpenses.filter(e => e.riskLevel === 'low').length}
+                  </div>
+                </div>
+              </div>
+
+              {/* 风险开支列表 */}
+              <div className="bg-white border border-gray-200 rounded-lg">
+                <div className="px-4 py-3 border-b border-gray-200">
+                  <h4 className="text-lg font-medium text-gray-900">风险开支详情</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">风险等级</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">申请人</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">团队</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用途</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">金额</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">风险原因</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">申请时间</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {expenseStats.highRiskExpenses.map((expense) => (
+                        <tr key={expense.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                              expense.riskLevel === 'high' ? 'bg-red-100 text-red-800' :
+                              expense.riskLevel === 'medium' ? 'bg-orange-100 text-orange-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {expense.riskLevel === 'high' ? '🔴 高风险' :
+                               expense.riskLevel === 'medium' ? '🟠 中风险' :
+                               '🟡 低风险'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="flex-shrink-0 h-8 w-8">
+                                <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                  <span className="text-sm font-medium text-blue-600">
+                                    {expense.creator?.name?.charAt(0) || '?'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="ml-3">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {expense.creator?.name || '未知人员'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{expense.team?.name || '未知团队'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{expense.purpose || '未填写'}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center space-x-2">
+                              <div className={`text-sm font-bold ${
+                                expense.riskLevel === 'high' ? 'text-red-600' :
+                                expense.riskLevel === 'medium' ? 'text-orange-600' :
+                                'text-yellow-600'
+                              }`}>
+                                ¥{expense.amount?.toLocaleString() || 0}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">{expense.riskReason}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">
