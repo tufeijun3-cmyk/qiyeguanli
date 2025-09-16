@@ -26,7 +26,6 @@ export default function FinanceView({ user, onSuccess }) {
   const [paymentScreenshot, setPaymentScreenshot] = useState(null)
   const [paymentScreenshotUrl, setPaymentScreenshotUrl] = useState('')
   const [paymentComment, setPaymentComment] = useState('')
-  const [activeTab, setActiveTab] = useState('pending')
   const [expenseStats, setExpenseStats] = useState({
     byPurpose: {},
     byPerson: {},
@@ -1417,6 +1416,6 @@ export default function FinanceView({ user, onSuccess }) {
       </div>
     </div>
   )}
-</div>
-)
+  </div>
+  )
 }
