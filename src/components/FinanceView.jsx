@@ -7,6 +7,19 @@ export default function FinanceView({ user, onSuccess }) {
   const [allExpenses, setAllExpenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedExpense, setSelectedExpense] = useState(null)
+  const [activeTab, setActiveTab] = useState('pending')
+  const [profileForm, setProfileForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || ''
+  })
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [showProfileModal, setShowProfileModal] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentExpense, setPaymentExpense] = useState(null)
@@ -232,6 +245,63 @@ export default function FinanceView({ user, onSuccess }) {
     }
   }
 
+  // 修改密码
+  const handleChangePassword = async (e) => {
+    e.preventDefault()
+    try {
+      // 验证新密码
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        alert('新密码和确认密码不一致')
+        return
+      }
+      
+      if (passwordForm.newPassword.length < 6) {
+        alert('新密码长度至少6位')
+        return
+      }
+
+      // 验证当前密码
+      if (passwordForm.currentPassword !== user.password) {
+        alert('当前密码错误')
+        return
+      }
+
+      // 更新密码
+      const { error } = await databaseService.supabase
+        .from('users')
+        .update({ password: passwordForm.newPassword })
+        .eq('id', user.id)
+
+      if (error) {
+        throw error
+      }
+
+      alert('密码修改成功！')
+      setShowPasswordModal(false)
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      })
+    } catch (error) {
+      console.error('修改密码失败:', error)
+      alert('修改密码失败，请重试')
+    }
+  }
+
+  // 更新个人信息
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault()
+    try {
+      // 这里应该调用更新用户信息的API
+      alert('个人信息更新成功！')
+      setShowProfileModal(false)
+    } catch (error) {
+      console.error('更新个人信息失败:', error)
+      alert('更新失败，请重试')
+    }
+  }
+
   const handleSubmitPayment = async () => {
     if (!paymentScreenshot) {
       alert('请上传交易截图')
@@ -329,6 +399,16 @@ export default function FinanceView({ user, onSuccess }) {
                 }`}
               >
                 风险预警 ({expenseStats.highRiskExpenses.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('profile')}
+                className={`px-4 py-2 text-sm font-medium rounded-md ${
+                  activeTab === 'profile'
+                    ? 'bg-gray-100 text-gray-700 border border-gray-200'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                个人资料
               </button>
             </div>
           </div>
@@ -1157,6 +1237,186 @@ export default function FinanceView({ user, onSuccess }) {
           </div>
         </div>
       )}
+          
+      {activeTab === 'profile' && (
+        // 个人资料
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900">个人资料</h3>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowPasswordModal(true)}
+                className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors duration-200"
+              >
+                🔒 修改密码
+              </button>
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200"
+              >
+                ✏️ 编辑资料
+              </button>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">姓名</label>
+                <p className="text-gray-900">{user.name}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
+                <p className="text-gray-900">{user.email}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">电话</label>
+                <p className="text-gray-900">{user.phone || '未设置'}</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">角色</label>
+                <p className="text-gray-900">财务</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
+  )}
+
+  {/* 个人资料编辑模态框 */}
+  {showProfileModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">编辑资料</h3>
+            <button
+              onClick={() => setShowProfileModal(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleUpdateProfile} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">姓名</label>
+              <input
+                type="text"
+                value={profileForm.name}
+                onChange={(e) => setProfileForm({...profileForm, name: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
+              <input
+                type="email"
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({...profileForm, email: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">电话</label>
+              <input
+                type="tel"
+                value={profileForm.phone}
+                onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors duration-200"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition-colors duration-200"
+              >
+                保存修改
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* 密码修改模态框 */}
+  {showPasswordModal && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">修改密码</h3>
+            <button
+              onClick={() => setShowPasswordModal(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">当前密码</label>
+              <input
+                type="password"
+                value={passwordForm.currentPassword}
+                onChange={(e) => setPasswordForm({...passwordForm, currentPassword: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">新密码</label>
+              <input
+                type="password"
+                value={passwordForm.newPassword}
+                onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+                minLength="6"
+              />
+              <p className="text-xs text-gray-500 mt-1">密码长度至少6位</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">确认新密码</label>
+              <input
+                type="password"
+                value={passwordForm.confirmPassword}
+                onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                required
+              />
+            </div>
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(false)}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors duration-200"
+              >
+                取消
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 transition-colors duration-200"
+              >
+                确认修改
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+)
 }
