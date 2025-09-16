@@ -124,18 +124,6 @@ export default function LoginForm({ onLogin, loading = false }) {
               )}
             </button>
           </div>
-
-          {/* 测试账号提示 */}
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h4 className="text-sm font-medium text-gray-900 mb-2">测试账号：</h4>
-            <div className="text-xs text-gray-600 space-y-1">
-              <div><strong>管理员:</strong> admin@company.com / admin123</div>
-              <div><strong>财务:</strong> finance@company.com / finance123</div>
-              <div><strong>主管:</strong> supervisor@company.com / supervisor123</div>
-              <div><strong>组长:</strong> leader@company.com / leader123</div>
-              <div><strong>员工:</strong> employee@company.com / employee123</div>
-            </div>
-          </div>
         </form>
       </div>
     </div>
